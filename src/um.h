@@ -7,6 +7,10 @@
 
 typedef uint32_t u32;
 
+typedef struct _InstructionBase {
+    u32 op : 4;
+} InstructionBase;
+
 typedef struct _Instruction {
     u32 op : 4;
     u32 _unused : 19;
@@ -23,6 +27,7 @@ typedef struct _Special {
 
 typedef union _Word {
     u32 word;
+    InstructionBase base;
     Instruction insxn;
     Special spcl;
 } Word;
@@ -46,12 +51,13 @@ typedef enum _Op {
 
 typedef struct _Array {
     u32 len;
-    Word contents[];
+    Word contents[0];
 } Array;
 
 typedef struct _MemPool {
     u32 len;
-    Array arrays[];
+    u32 cap;
+    Array **arrays;
 } MemPool;
 
 typedef struct _VM {
@@ -63,7 +69,8 @@ typedef struct _VM {
     Word r5;
     Word r6;
     Word r7;
-    MemPool *mem;
+    u32 ip;
+    MemPool mem;
 } VM;
 
 VM the_vm;
@@ -92,14 +99,14 @@ static inline Word GET(u32 r) {
 
 static inline void SET(u32 r, Word val) {
     switch(r) {
-    case 0: the_vm.r0 = (val); break;
-    case 1: the_vm.r1 = (val); break;
-    case 2: the_vm.r2 = (val); break;
-    case 3: the_vm.r3 = (val); break;
-    case 4: the_vm.r4 = (val); break;
-    case 5: the_vm.r5 = (val); break;
-    case 6: the_vm.r6 = (val); break;
-    case 7: the_vm.r7 = (val); break;
+    case 0: the_vm.r0 = val; break;
+    case 1: the_vm.r1 = val; break;
+    case 2: the_vm.r2 = val; break;
+    case 3: the_vm.r3 = val; break;
+    case 4: the_vm.r4 = val; break;
+    case 5: the_vm.r5 = val; break;
+    case 6: the_vm.r6 = val; break;
+    case 7: the_vm.r7 = val; break;
     default: fail("ILLEGAL REGISTER ACCESS"); break;
     }
 }
@@ -113,11 +120,20 @@ static inline void SET(u32 r, Word val) {
 #define REGB(insxn) ((Word)(insxn)).insxn.rB
 #define REGC(insxn) ((Word)(insxn)).insxn.rC
 
+#define GETA(insxn) GET(REGA(insxn))
+#define GETB(insxn) GET(REGB(insxn))
+#define GETC(insxn) GET(REGC(insxn))
+
+#define SETA(insxn, val) SET(REGA(insxn), (Word)(val))
+#define SETB(insxn, val) SET(REGB(insxn), (Word)(val))
+#define SETC(insxn, val) SET(REGC(insxn), (Word)(val))
+
 #define REGSPC(spcl) ((Word)(spcl)).spcl.rA
+#define GETSPC(spcl) GET(REGSPC(spcl))
 
 static inline Word aget(Array *ary, u32 idx) {
     if (ary) {
-        if (idx < ary -> len)
+        if (idx < ary->len)
             return ary->contents[idx];
         else
             fail("Array index out of bounds!");
@@ -129,7 +145,7 @@ static inline Word aget(Array *ary, u32 idx) {
 
 static inline void aset(Array *ary, u32 idx, Word val) {
     if (ary) {
-        if (idx < ary -> len)
+        if (idx < ary->len)
             ary->contents[idx] = val;
         else
             fail("Array index out of bounds!");
@@ -138,10 +154,18 @@ static inline void aset(Array *ary, u32 idx, Word val) {
 }
 
 static inline Array *ARY(u32 idx) {
-    if (idx < the_vm.mem->len)
-        return &the_vm.mem->arrays[idx];
+    if (idx < the_vm.mem.len)
+        return the_vm.mem.arrays[idx];
     else
         fail("MemPool index out of bounds!");
 }
+
+u32 vm_alloc(u32 size);
+u32 vm_append_ary(u32 size);
+Array *vm_new_ary(u32 size);
+void vm_ary_copy(u32 dest_idx, u32 src_idx);
+void vm_grow_mem();
+void vm_free(u32 idx);
+void decode_and_run(void);
 
 #endif
