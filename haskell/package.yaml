@@ -1,0 +1,38 @@
+name: UM
+version: '0.1.0.0'
+category: VM
+author: Jon Distad
+maintainer: jon.distad@gmail.com
+copyright: 2017 Jon Distad
+license: BSD3
+github: jondistad/um
+
+library:
+  source-dirs: src
+  dependencies:
+  - base >=4.7 && <5
+  - binary
+
+executables:
+  UM:
+    main: Main.hs
+    source-dirs: app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - base
+    - UM
+
+tests:
+  UM-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - base
+    - UM
