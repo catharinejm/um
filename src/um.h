@@ -75,8 +75,11 @@ typedef struct _VM {
 
 VM the_vm;
 
+void vm_dump(void);
+
 void fail(char *msg) {
     fprintf(stderr, "*** ERROR: %s\n", msg);
+    vm_dump();
     exit(1);
 }
 
@@ -130,6 +133,7 @@ static inline void SET(u32 r, Word val) {
 
 #define REGSPC(spcl) ((Word)(spcl)).spcl.rA
 #define GETSPC(spcl) GET(REGSPC(spcl))
+#define SETSPC(spcl, val) SET(REGSPC(spcl), (Word)(val))
 
 static inline Word aget(Array *ary, u32 idx) {
     if (ary) {
@@ -167,5 +171,57 @@ void vm_ary_copy(u32 dest_idx, u32 src_idx);
 void vm_grow_mem();
 void vm_free(u32 idx);
 void decode_and_run(void);
+
+int op_str(Op op, char * const buf, int bsize) {
+    char * s;
+    switch (op) {
+    case MVCOND: s = "MVCOND"; break;
+    case LOAD: s = "LOAD"; break;
+    case STORE: s = "STORE"; break;
+    case ADD: s = "ADD"; break;
+    case MULT: s = "MULT"; break;
+    case DIV: s = "DIV"; break;
+    case NAND: s = "NAND"; break;
+    case HALT: s = "HALT"; break;
+    case ALLOC: s = "ALLOC"; break;
+    case FREE: s = "FREE"; break;
+    case OUTPUT: s = "OUTPUT"; break;
+    case INPUT: s = "INPUT"; break;
+    case LDPROG: s = "LDPROG"; break;
+    case LDIMM: s = "LDIMM"; break;
+    default: s = "<INVALID OP>"; break;
+    }
+    return snprintf(buf, bsize, "%s (%u)", s, (u32)op);
+}
+
+char * const print_insxn(Word wd, char * const buf, int bsize) {
+    memset(buf, 0, bsize);
+    
+    int len = snprintf(buf, bsize, "%x - OP: ", wd.word);
+    len += op_str((Op)wd.base.op, buf+len, bsize-len);
+    if ((Op)wd.base.op == LDIMM)
+        snprintf(buf+len, bsize-len, " - RA: %u - IMM: %u", wd.spcl.rA, wd.spcl.imm);
+    else
+        snprintf(buf+len, 256-len, " - RA: %u - RB: %u - RC: %u", wd.insxn.rA, wd.insxn.rB, wd.insxn.rC);
+    buf[bsize-1] = '\0';
+    return buf;        
+}
+
+void vm_dump() {
+    fprintf(stderr, "R0: %u\n", the_vm.r0.word);
+    fprintf(stderr, "R1: %u\n", the_vm.r1.word);
+    fprintf(stderr, "R2: %u\n", the_vm.r2.word);
+    fprintf(stderr, "R3: %u\n", the_vm.r3.word);
+    fprintf(stderr, "R4: %u\n", the_vm.r4.word);
+    fprintf(stderr, "R5: %u\n", the_vm.r5.word);
+    fprintf(stderr, "R6: %u\n", the_vm.r6.word);
+    fprintf(stderr, "R7: %u\n", the_vm.r7.word);
+    fprintf(stderr, "IP: %u\n", the_vm.ip);
+    char buf[256];
+    print_insxn(aget(ARY(0), the_vm.ip), buf, 256);
+    fprintf(stderr, "Current instruction: %s\n", buf);
+    fprintf(stderr, "Arrays: %u (cap: %u)\n", the_vm.mem.len, the_vm.mem.cap);
+}
+
 
 #endif

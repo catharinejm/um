@@ -1,4 +1,11 @@
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <assert.h>
+#include <signal.h>
 
 #include "um.h"
 
@@ -30,7 +37,8 @@ void vm_free(u32 idx) {
 }
 
 u32 vm_append_ary(u32 size) {
-    if (the_vm.mem.len >= the_vm.mem.cap)
+    assert(the_vm.mem.len <= the_vm.mem.cap);
+    if (the_vm.mem.len == the_vm.mem.cap)
         vm_grow_mem();
     u32 i = the_vm.mem.len++;
     the_vm.mem.arrays[i] = vm_new_ary(size);
@@ -63,8 +71,7 @@ void vm_grow_mem() {
     Array** arys = (Array**)realloc(the_vm.mem.arrays, size);
     if (!arys)
         fail("Failed to resize memory pool");
-    memset(arys, 0, size);
-    memcpy(arys, the_vm.mem.arrays, pool.len);
+    memset(arys+the_vm.mem.cap, 0, sizeof(Array*)*(pool.cap-the_vm.mem.cap));
     pool.arrays = arys;
     the_vm.mem = pool;
 }
@@ -94,7 +101,10 @@ void vm_op_mult(Instruction insxn) {
 }
 
 void vm_op_div(Instruction insxn) {
-    SETA(insxn, GETB(insxn).word / GETC(insxn).word);
+    u32 div = GETC(insxn).word;
+    if (div == 0)
+        fail("divide by zero!");
+    SETA(insxn, GETB(insxn).word / div);
 }
 
 void vm_op_nand(Instruction insxn) {
@@ -119,7 +129,7 @@ void vm_op_output(Instruction insxn) {
     u32 c = GETC(insxn).word;
     if (c > 255)
         fail("Illegal character value");
-    printf("%c", (char)c);
+    fprintf(stderr, "%c", (char)c);
 }
 
 void vm_op_input(Instruction insxn) {
@@ -135,48 +145,93 @@ void vm_op_ldprog(Instruction insxn) {
 }
 
 void vm_op_ldimm(Special spcl) {
-    SET(GETSPC(spcl).word, (Word)(u32)spcl.imm);
+    SETSPC(spcl, (u32)spcl.imm);
 }
 
 void decode_and_run() {
-    Word word = aget(ARY(0), the_vm.ip);
-    switch ((Op)word.base.op) {
+    u32 word = aget(ARY(0), the_vm.ip).word;
+    Word w = (Word)((u32)0 | ((word & 0xFF) << 24) | (((word >> 8) & 0xFF) << 16) | (((word >> 16) & 0xFF) << 8) | (word >> 24));
+    switch ((Op)w.base.op) {
     case MVCOND:
-        vm_op_mvcond(word.insxn); break;
+        vm_op_mvcond(w.insxn); break;
     case LOAD:
-        vm_op_load(word.insxn); break;
+        vm_op_load(w.insxn); break;
     case STORE:
-        vm_op_store(word.insxn); break;
+        vm_op_store(w.insxn); break;
     case ADD:
-        vm_op_add(word.insxn); break;
+        vm_op_add(w.insxn); break;
     case MULT:
-        vm_op_mult(word.insxn); break;
+        vm_op_mult(w.insxn); break;
     case DIV:
-        vm_op_div(word.insxn); break;
+        vm_op_div(w.insxn); break;
     case NAND:
-        vm_op_nand(word.insxn); break;
+        vm_op_nand(w.insxn); break;
     case HALT:
-        vm_op_halt(word.insxn); break;
+        vm_op_halt(w.insxn); break;
     case ALLOC:
-        vm_op_alloc(word.insxn); break;
+        vm_op_alloc(w.insxn); break;
     case FREE:
-        vm_op_free(word.insxn); break;
+        vm_op_free(w.insxn); break;
     case OUTPUT:
-        vm_op_output(word.insxn); break;
+        vm_op_output(w.insxn); break;
     case INPUT:
-        vm_op_input(word.insxn); break;
+        vm_op_input(w.insxn); break;
     case LDPROG:
-        vm_op_ldprog(word.insxn); break;
+        vm_op_ldprog(w.insxn); break;
     case LDIMM:
-        vm_op_ldimm(word.spcl); break;
+        vm_op_ldimm(w.spcl); break;
     default:
         fail("illegal instruction");
     }
+    if ((Op)w.base.op != LDPROG)
+        the_vm.ip++;
+}
+
+void init_vm() {
+    the_vm.r0 = ZERO;
+    the_vm.r1 = ZERO;
+    the_vm.r2 = ZERO;
+    the_vm.r3 = ZERO;
+    the_vm.r4 = ZERO;
+    the_vm.r5 = ZERO;
+    the_vm.r6 = ZERO;
+    the_vm.r7 = ZERO;
+    the_vm.ip = 0;
+    the_vm.mem.len = 1;
+    the_vm.mem.cap = 16;
+    the_vm.mem.arrays = malloc(16*sizeof(Array*));
+    if (!the_vm.mem.arrays)
+        fail("Failed to initialize mempool");
+}
+
+void handler(int signum) {
+    vm_dump();
 }
 
 int main(int argc, char *argv[]) {
     setbuf(stdout, NULL); // disable stdout buffering
-    printf("Ummm...\n");
+
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <file>\n", argv[0]);
+        return 1;
+    }
+    
+    init_vm();
+    int fd = open(argv[1], O_RDONLY);
+    if (fd < 0)
+        fail("failed to open file");
+    struct stat st;
+    if (stat(argv[1], &st))
+        fail("failed ot stat file");
+    void *fp = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if ((intptr_t)fp < 0)
+        fail("failed to mmap file");
+    
+    the_vm.mem.arrays[0] = (Array*)fp;
+    signal(SIGUSR1, handler);
+    for (;;) {
+        decode_and_run();
+    }
 
     return 0;
 }
