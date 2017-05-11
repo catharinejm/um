@@ -12,6 +12,16 @@ library:
   dependencies:
   - base >=4.7 && <5
   - binary
+  - bytestring
+  - lens
+  - mtl
+  - transformers
+  - vector
+  default-extensions:
+    - FlexibleInstances
+    - FunctionalDependencies
+    - MultiParamTypeClasses
+    - ViewPatterns
 
 executables:
   UM:
