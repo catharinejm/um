@@ -18,9 +18,14 @@ library:
   - transformers
   - vector
   default-extensions:
+    - ConstraintKinds
     - FlexibleInstances
+    - FlexibleContexts
     - FunctionalDependencies
     - MultiParamTypeClasses
+    - NamedFieldPuns
+    - RankNTypes
+    - ScopedTypeVariables
     - ViewPatterns
 
 executables:
@@ -28,9 +33,10 @@ executables:
     main: Main.hs
     source-dirs: app
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+    # - -threaded
+    # - -rtsopts
+    # - -with-rtsopts=-N
+    - -O
     dependencies:
     - base
     - UM

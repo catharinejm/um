@@ -8,5 +8,5 @@ main :: IO ()
 main = do
   args <- getArgs
   case args of
-   [file] -> runProgram file
+   [file] -> runProgramFile file
    _ -> putStrLn "Usage: UM <file>"
