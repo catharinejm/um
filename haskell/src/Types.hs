@@ -1,19 +1,17 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Types where
 
+import           UM.Base
+
 import           Control.Lens.TH
-import           Control.Monad.Except (MonadError)
-import           Control.Monad.State.Strict (MonadState)
-import           Data.Binary
-import qualified Data.Binary.Get as B
-import qualified Data.Binary.Put as B
+import           Control.Monad.Except
+import           Control.Monad.Reader
+import           Data.Array.ST (STArray, STUArray)
+import qualified Data.Array.ST as STA
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import           Data.List
-import qualified Data.Vector as V
-import qualified Data.Vector.Unboxed as VU
 import           Data.Word
 import           Numeric (showHex)
 
@@ -73,16 +71,16 @@ decodeRegister 6 = R6
 decodeRegister 7 = R7
 decodeRegister r = error ("invalid register number: " ++ show r)
 
-data VMInstruction = VMInstruction { _vMInstructionOp :: !Op
-                                   , _vMInstructionRegA :: !Register
-                                   , _vMInstructionRegB :: !Register
-                                   , _vMInstructionRegC :: !Register
-                                 }
+data VMInstruction = VMInstruction { _vMInstructionOp :: Op
+                                   , _vMInstructionRegA :: Register
+                                   , _vMInstructionRegB :: Register
+                                   , _vMInstructionRegC :: Register
+                                   }
 makeFields ''VMInstruction
 
-data VMSpecial = VMSpecial { _vMSpecialOp :: !Op
-                           , _vMSpecialRegA :: !Register
-                           , _vMSpecialImmed :: !Word32
+data VMSpecial = VMSpecial { _vMSpecialOp :: Op
+                           , _vMSpecialRegA :: Register
+                           , _vMSpecialImmed :: Word32
                            }
                deriving (Eq, Show)
 makeFields ''VMSpecial
@@ -103,51 +101,63 @@ decodeSpecial word@(decodeOp -> op@LDIMM) = Just $ VMSpecial op regA immed
     immed = word .&. 0x1FFFFFF
 decodeSpecial _ = Nothing
 
-newtype MemArray = MemArray { _memArrayWords :: VU.Vector Word32 }
-                deriving (Eq, Monoid)
-makeFields ''MemArray
+type MemArray s = STUArray s Int Word32
 
-emptyMemArray :: MemArray
-emptyMemArray = mempty
+data VM s = VM { vmR0 :: STRef s Word32
+               , vmR1 :: STRef s Word32
+               , vmR2 :: STRef s Word32
+               , vmR3 :: STRef s Word32
+               , vmR4 :: STRef s Word32
+               , vmR5 :: STRef s Word32
+               , vmR6 :: STRef s Word32
+               , vmR7 :: STRef s Word32
+               , vmIP :: STRef s Word32
+               , vmMempool :: STArray s Int (Maybe (MemArray s))
+               }
 
-zeroedMemArray :: Int -> MemArray
-zeroedMemArray size = MemArray (VU.replicate size 0)
+data ShowVM = ShowVM { showVMR0 :: Word32
+                     , showVMR1 :: Word32
+                     , showVMR2 :: Word32
+                     , showVMR3 :: Word32
+                     , showVMR4 :: Word32
+                     , showVMR5 :: Word32
+                     , showVMR6 :: Word32
+                     , showVMR7 :: Word32
+                     , showVMIP :: Word32
+                     }
+            deriving (Show)
 
-instance Show MemArray where
-  show (MemArray (VU.null -> True)) = "MemArray []"
-  show (MemArray vec) = "MemArray ["
-                       ++ concat (intersperse ", " (map (`showHex` "") (VU.toList (VU.take 10 vec))))
-                       ++ (if (VU.null (VU.drop 10 vec)) then "]" else ", ...]")
+showableVM :: VM s -> ST s ShowVM
+showableVM (VM r0 r1 r2 r3 r4 r5 r6 r7 ip _) = do
+  r0' <- readSTRef r0
+  r1' <- readSTRef r1
+  r2' <- readSTRef r2
+  r3' <- readSTRef r3
+  r4' <- readSTRef r4
+  r5' <- readSTRef r5
+  r6' <- readSTRef r6
+  r7' <- readSTRef r7
+  ip' <- readSTRef ip
+  return $ ShowVM r0' r1' r2' r3' r4' r5' r6' r7' ip'
 
-instance Binary MemArray where
-  get = aux []
-    where
-      aux acc = do
-        empty <- B.isEmpty
-        if empty
-          then return (MemArray (VU.fromList (reverse acc)))
-          else do word <- B.getWord32be
-                  aux (word : acc)
-  put (MemArray vec)
-    | VU.null vec = return ()
-    | otherwise = do B.putWord32be (VU.head vec)
-                     put (MemArray (VU.tail vec))
+type UMError = String
+type Program s m = (MonadReader (VM s) m, MonadError UMError m, MonadST s m)
+type ProgramST s = ExceptT UMError (ReaderT (VM s) (ST s))
 
-data VM = VM { _r0 :: !Word32
-             , _r1 :: !Word32
-             , _r2 :: !Word32
-             , _r3 :: !Word32
-             , _r4 :: !Word32
-             , _r5 :: !Word32
-             , _r6 :: !Word32
-             , _r7 :: !Word32
-             , _ip :: !Word32
-             , _mempool :: !(V.Vector (Maybe MemArray))
-             }
-        deriving (Show)
-makeClassy ''VM
+class MonadST s m where
+  newRef :: a -> m (STRef s a)
+  readRef :: STRef s a -> m a
+  writeRef :: STRef s a -> a -> m ()
+  newArray :: Int -> a -> m (STArray s Int a)
 
-initVM :: VM
-initVM = VM 0 0 0 0 0 0 0 0 0 (V.fromList (replicate 16 Nothing))
+instance MonadST s (ST s) where
+  newRef = newSTRef
+  readRef = readSTRef
+  writeRef r a = writeSTRef r a
+  newArray size a = STA.newArray (0, size-1) a
 
-type Program m = (MonadState VM m, MonadError String m)
+instance MonadST s (ProgramST s) where
+  newRef = lift . lift . newSTRef
+  readRef = lift . lift . readSTRef
+  writeRef r a = lift . lift $ writeSTRef r a
+  newArray size a = lift . lift $ STA.newArray (0, size-1) a

@@ -202,7 +202,7 @@ char * const print_insxn(Word wd, char * const buf, int bsize) {
     if ((Op)wd.base.op == LDIMM)
         snprintf(buf+len, bsize-len, " - RA: %u - IMM: %u", wd.spcl.rA, wd.spcl.imm);
     else
-        snprintf(buf+len, 256-len, " - RA: %u - RB: %u - RC: %u", wd.insxn.rA, wd.insxn.rB, wd.insxn.rC);
+        snprintf(buf+len, bsize-len, " - RA: %u - RB: %u - RC: %u", wd.insxn.rA, wd.insxn.rB, wd.insxn.rC);
     buf[bsize-1] = '\0';
     return buf;        
 }

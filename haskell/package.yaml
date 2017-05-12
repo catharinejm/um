@@ -10,13 +10,13 @@ github: jondistad/um
 library:
   source-dirs: src
   dependencies:
-  - base >=4.7 && <5
-  - binary
-  - bytestring
-  - lens
-  - mtl
-  - transformers
-  - vector
+    - array
+    - base >=4.7 && <5
+    - base-prelude
+    - bytestring
+    - lens
+    - mtl
+    - transformers
   default-extensions:
     - ConstraintKinds
     - FlexibleInstances
@@ -24,8 +24,10 @@ library:
     - FunctionalDependencies
     - MultiParamTypeClasses
     - NamedFieldPuns
+    - NoImplicitPrelude
     - RankNTypes
     - ScopedTypeVariables
+    - Strict
     - ViewPatterns
 
 executables:
@@ -33,22 +35,22 @@ executables:
     main: Main.hs
     source-dirs: app
     ghc-options:
-    # - -threaded
-    # - -rtsopts
-    # - -with-rtsopts=-N
-    - -O
+      - -O
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N1
     dependencies:
-    - base
-    - UM
+      - base
+      - UM
 
 tests:
   UM-test:
     main: Spec.hs
     source-dirs: test
     ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N1
     dependencies:
-    - base
-    - UM
+      - base
+      - UM

@@ -139,8 +139,8 @@ void vm_op_input(Instruction insxn) {
 
 void vm_op_ldprog(Instruction insxn) {
     u32 idx = GETB(insxn).word;
-    if (idx == 0) return;
-    vm_ary_copy(0, idx);
+    if (idx != 0)
+        vm_ary_copy(0, idx);
     the_vm.ip = GETC(insxn).word;
 }
 
@@ -149,42 +149,46 @@ void vm_op_ldimm(Special spcl) {
 }
 
 void decode_and_run() {
-    u32 word = aget(ARY(0), the_vm.ip).word;
-    Word w = (Word)((u32)0 | ((word & 0xFF) << 24) | (((word >> 8) & 0xFF) << 16) | (((word >> 16) & 0xFF) << 8) | (word >> 24));
-    switch ((Op)w.base.op) {
-    case MVCOND:
-        vm_op_mvcond(w.insxn); break;
-    case LOAD:
-        vm_op_load(w.insxn); break;
-    case STORE:
-        vm_op_store(w.insxn); break;
-    case ADD:
-        vm_op_add(w.insxn); break;
-    case MULT:
-        vm_op_mult(w.insxn); break;
-    case DIV:
-        vm_op_div(w.insxn); break;
-    case NAND:
-        vm_op_nand(w.insxn); break;
-    case HALT:
-        vm_op_halt(w.insxn); break;
-    case ALLOC:
-        vm_op_alloc(w.insxn); break;
-    case FREE:
-        vm_op_free(w.insxn); break;
-    case OUTPUT:
-        vm_op_output(w.insxn); break;
-    case INPUT:
-        vm_op_input(w.insxn); break;
-    case LDPROG:
-        vm_op_ldprog(w.insxn); break;
-    case LDIMM:
-        vm_op_ldimm(w.spcl); break;
-    default:
-        fail("illegal instruction");
+    for (;;) {
+        u32 word = aget(ARY(0), the_vm.ip).word;
+        Word w = (Word)((u32)0 | ((word & 0xFF) << 24) | (((word >> 8) & 0xFF) << 16) | (((word >> 16) & 0xFF) << 8) | (word >> 24));
+        fprintf(stderr, "%08x\n", w.word);
+        vm_dump();
+        switch ((Op)w.base.op) {
+        case MVCOND:
+            vm_op_mvcond(w.insxn); break;
+        case LOAD:
+            vm_op_load(w.insxn); break;
+        case STORE:
+            vm_op_store(w.insxn); break;
+        case ADD:
+            vm_op_add(w.insxn); break;
+        case MULT:
+            vm_op_mult(w.insxn); break;
+        case DIV:
+            vm_op_div(w.insxn); break;
+        case NAND:
+            vm_op_nand(w.insxn); break;
+        case HALT:
+            vm_op_halt(w.insxn); break;
+        case ALLOC:
+            vm_op_alloc(w.insxn); break;
+        case FREE:
+            vm_op_free(w.insxn); break;
+        case OUTPUT:
+            vm_op_output(w.insxn); break;
+        case INPUT:
+            vm_op_input(w.insxn); break;
+        case LDPROG:
+            vm_op_ldprog(w.insxn); break;
+        case LDIMM:
+            vm_op_ldimm(w.spcl); break;
+        default:
+            fail("illegal instruction");
+        }
+        if ((Op)w.base.op != LDPROG)
+            the_vm.ip++;
     }
-    if ((Op)w.base.op != LDPROG)
-        the_vm.ip++;
 }
 
 void init_vm() {
@@ -226,12 +230,12 @@ int main(int argc, char *argv[]) {
     void *fp = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     if ((intptr_t)fp < 0)
         fail("failed to mmap file");
-    
-    the_vm.mem.arrays[0] = (Array*)fp;
+    Array *zero_ary = vm_new_ary((u32)st.st_size);
+    memcpy(zero_ary->contents, fp, st.st_size);
+    munmap(fp, st.st_size);
+    the_vm.mem.arrays[0] = zero_ary;
     signal(SIGUSR1, handler);
-    for (;;) {
-        decode_and_run();
-    }
+    decode_and_run();
 
     return 0;
 }
