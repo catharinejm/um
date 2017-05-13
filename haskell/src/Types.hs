@@ -7,11 +7,12 @@ import           UM.Base
 import           Control.Lens.TH
 import           Control.Monad.Except
 import           Control.Monad.Reader
+import qualified Data.Array.IO as AIO
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.IORef as IORef
 import           Data.List
 import           Data.Word
-import qualified Data.IORef as IORef
 import           Numeric (showHex)
 
 data Op = MVCOND
@@ -118,7 +119,4 @@ data VM = VM { vmR0 :: IORef Word32
 
 type UMError = String
 type Program m = (MonadIO m, MonadError UMError m, MonadReader VM m)
-type ProgramST m = IO (ReaderT VM (ExceptT UMError m))
-
-class (MonadIO m) => MonadIORef m where
-  newIORef :: e -> m (IORef e)
+type ProgramST m = ReaderT VM (ExceptT UMError m)

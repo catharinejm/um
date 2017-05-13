@@ -2,6 +2,7 @@ module Lib where
 
 import           Types
 import           UM.Base
+import           Util
 
 import           Control.Lens
 import           Control.Monad.Except
@@ -27,23 +28,23 @@ runProgramFile file = do
    Right _ -> liftIO $ do putStrLn "Goodbye..."
                           exitSuccess
 
-initVM :: (MonadError UMError m, MonadIO m) => ByteString -> m VM
+initVM :: (MonadIO m) => ByteString -> ExceptT UMError m VM
 initVM bytes = do
   let blen = BS.length bytes
   when (blen `rem` 4 /= 0) (throwError "Program must be a 4-byte aligned")
-  ary <- liftIO $ newArray (0, (blen `div` 4) - 1) 0
+  ary <- newArray (0, (blen `div` 4) - 1) 0
   getWords bytes ary 0
-  mempool <- liftIO $ newArray_ (0, 15)
-  liftIO $ writeArray mempool 0 (Just ary)
-  r0 <- liftIO (newIORef 0)
-  r1 <- liftIO (newIORef 0)
-  r2 <- liftIO (newIORef 0)
-  r3 <- liftIO (newIORef 0)
-  r4 <- liftIO (newIORef 0)
-  r5 <- liftIO (newIORef 0)
-  r6 <- liftIO (newIORef 0)
-  r7 <- liftIO (newIORef 0)
-  ip <- liftIO (newIORef 0)
+  mempool <- newArray_ (0, 15)
+  writeArray mempool 0 (Just ary)
+  r0 <- newIORef 0
+  r1 <- newIORef 0
+  r2 <- newIORef 0
+  r3 <- newIORef 0
+  r4 <- newIORef 0
+  r5 <- newIORef 0
+  r6 <- newIORef 0
+  r7 <- newIORef 0
+  ip <- newIORef 0
   return $ VM r0 r1 r2 r3 r4 r5 r6 r7 ip mempool
   where
     getWords bs ary i = do
@@ -52,7 +53,7 @@ initVM bytes = do
         else do let (wdbs, rem) = BS.splitAt 4 bs
                     [b1, b2, b3, b4] = map b2w (BS.unpack wdbs)
                     word = (b1 `shiftL` 24) .|. (b2 `shiftL` 16) .|. (b3 `shiftL` 8) .|. b4
-                liftIO $ writeArray ary i word
+                writeArray ary i word
                 getWords rem ary (i+1)
     b2w :: Word8 -> Word32
     b2w = fromIntegral
