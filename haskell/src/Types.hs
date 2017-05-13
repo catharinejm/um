@@ -7,12 +7,11 @@ import           UM.Base
 import           Control.Lens.TH
 import           Control.Monad.Except
 import           Control.Monad.Reader
-import           Data.Array.ST (STArray, STUArray)
-import qualified Data.Array.ST as STA
 import           Data.Bits
 import qualified Data.ByteString.Lazy as BSL
 import           Data.List
 import           Data.Word
+import qualified Data.IORef as IORef
 import           Numeric (showHex)
 
 data Op = MVCOND
@@ -101,63 +100,25 @@ decodeSpecial word@(decodeOp -> op@LDIMM) = Just $ VMSpecial op regA immed
     immed = word .&. 0x1FFFFFF
 decodeSpecial _ = Nothing
 
-type MemArray s = STUArray s Int Word32
+type MemArray = IOUArray Int Word32
 
-data VM s = VM { vmR0 :: STRef s Word32
-               , vmR1 :: STRef s Word32
-               , vmR2 :: STRef s Word32
-               , vmR3 :: STRef s Word32
-               , vmR4 :: STRef s Word32
-               , vmR5 :: STRef s Word32
-               , vmR6 :: STRef s Word32
-               , vmR7 :: STRef s Word32
-               , vmIP :: STRef s Word32
-               , vmMempool :: STArray s Int (Maybe (MemArray s))
-               }
+type MemPool = IOArray Int (Maybe MemArray)
 
-data ShowVM = ShowVM { showVMR0 :: Word32
-                     , showVMR1 :: Word32
-                     , showVMR2 :: Word32
-                     , showVMR3 :: Word32
-                     , showVMR4 :: Word32
-                     , showVMR5 :: Word32
-                     , showVMR6 :: Word32
-                     , showVMR7 :: Word32
-                     , showVMIP :: Word32
-                     }
-            deriving (Show)
-
-showableVM :: VM s -> ST s ShowVM
-showableVM (VM r0 r1 r2 r3 r4 r5 r6 r7 ip _) = do
-  r0' <- readSTRef r0
-  r1' <- readSTRef r1
-  r2' <- readSTRef r2
-  r3' <- readSTRef r3
-  r4' <- readSTRef r4
-  r5' <- readSTRef r5
-  r6' <- readSTRef r6
-  r7' <- readSTRef r7
-  ip' <- readSTRef ip
-  return $ ShowVM r0' r1' r2' r3' r4' r5' r6' r7' ip'
+data VM = VM { vmR0 :: IORef Word32
+             , vmR1 :: IORef Word32
+             , vmR2 :: IORef Word32
+             , vmR3 :: IORef Word32
+             , vmR4 :: IORef Word32
+             , vmR5 :: IORef Word32
+             , vmR6 :: IORef Word32
+             , vmR7 :: IORef Word32
+             , vmIP :: IORef Word32
+             , vmMempool :: IOArray Int (Maybe MemArray)
+             }
 
 type UMError = String
-type Program s m = (MonadReader (VM s) m, MonadError UMError m, MonadST s m)
-type ProgramST s = ExceptT UMError (ReaderT (VM s) (ST s))
+type Program m = (MonadIO m, MonadError UMError m, MonadReader VM m)
+type ProgramST m = IO (ReaderT VM (ExceptT UMError m))
 
-class MonadST s m where
-  newRef :: a -> m (STRef s a)
-  readRef :: STRef s a -> m a
-  writeRef :: STRef s a -> a -> m ()
-  newArray :: Int -> a -> m (STArray s Int a)
-
-instance MonadST s (ST s) where
-  newRef = newSTRef
-  readRef = readSTRef
-  writeRef r a = writeSTRef r a
-  newArray size a = STA.newArray (0, size-1) a
-
-instance MonadST s (ProgramST s) where
-  newRef = lift . lift . newSTRef
-  readRef = lift . lift . readSTRef
-  writeRef r a = lift . lift $ writeSTRef r a
-  newArray size a = lift . lift $ STA.newArray (0, size-1) a
+class (MonadIO m) => MonadIORef m where
+  newIORef :: e -> m (IORef e)

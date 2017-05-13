@@ -20,66 +20,45 @@ import           Numeric (showHex)
 runProgramFile :: (MonadIO io) => FilePath -> io ()
 runProgramFile file = do
   bytes <- liftIO (BS.readFile file)
-  res <- runProgram bytes
+  res <- runExceptT (initVM bytes >>= \vm -> runReaderT runProgram vm)
   case res of
    Left err -> liftIO $ do putStrLn ("**** ERROR: " ++ err)
                            exitFailure
    Right _ -> liftIO $ do putStrLn "Goodbye..."
                           exitSuccess
 
-runProgram :: ByteString -> Either String ()
-runProgram bytes = runExceptT (runReaderT (runST (initVM bytes >>= (\vm -> local (const vm) doit)) undefined))
-
-doit :: (Program s m) => m ()
-doit = return ()
-
-initVM :: ByteString -> ST s (VM s)
+initVM :: (MonadError UMError m, MonadIO m) => ByteString -> m VM
 initVM bytes = do
-  r0 <- newRef 0
-  r1 <- newRef 0
-  r2 <- newRef 0
-  r3 <- newRef 0
-  r4 <- newRef 0
-  r5 <- newRef 0
-  r6 <- newRef 0
-  r7 <- newRef 0
-  ip <- newRef 0
-  mem <- newArray 16 Nothing
-  return $ VM r0 r1 r2 r3 r4 r5 r6 r7 ip mem
-
--- -- loadProgram :: (MonadIO m, Program m) => MemArray -> m ()
--- -- loadProgram ary = do
--- --   mempool %= (ix 0 .~ (Just ary))
-
-r0, r1, r2, r3, r4, r5, r6, r7 :: (Program s m) => m (STRef s Word32)
-r0 = asks vmR0
-r1 = asks vmR1
-r2 = asks vmR2
-r3 = asks vmR3
-r4 = asks vmR4
-r5 = asks vmR5
-r6 = asks vmR6
-r7 = asks vmR7
-
-setReg :: (Program s m) => Register -> Word32 -> m ()
-setReg R0 val = r0 >>= flip writeRef val
-setReg R1 val = r1 >>= flip writeRef val
-setReg R2 val = r2 >>= flip writeRef val
-setReg R3 val = r3 >>= flip writeRef val
-setReg R4 val = r4 >>= flip writeRef val
-setReg R5 val = r5 >>= flip writeRef val
-setReg R6 val = r6 >>= flip writeRef val
-setReg R7 val = r7 >>= flip writeRef val
-
-getReg :: (Program s m) => Register -> m Word32
-getReg R0 = r0 >>= readRef
-getReg R1 = r1 >>= readRef
-getReg R2 = r2 >>= readRef
-getReg R3 = r3 >>= readRef
-getReg R4 = r4 >>= readRef
-getReg R5 = r5 >>= readRef
-getReg R6 = r6 >>= readRef
-getReg R7 = r7 >>= readRef
+  let blen = BS.length bytes
+  when (blen `rem` 4 /= 0) (throwError "Program must be a 4-byte aligned")
+  ary <- liftIO $ newArray (0, (blen `div` 4) - 1) 0
+  getWords bytes ary 0
+  mempool <- liftIO $ newArray_ (0, 15)
+  liftIO $ writeArray mempool 0 (Just ary)
+  r0 <- liftIO (newIORef 0)
+  r1 <- liftIO (newIORef 0)
+  r2 <- liftIO (newIORef 0)
+  r3 <- liftIO (newIORef 0)
+  r4 <- liftIO (newIORef 0)
+  r5 <- liftIO (newIORef 0)
+  r6 <- liftIO (newIORef 0)
+  r7 <- liftIO (newIORef 0)
+  ip <- liftIO (newIORef 0)
+  return $ VM r0 r1 r2 r3 r4 r5 r6 r7 ip mempool
+  where
+    getWords bs ary i = do
+      if BS.null bs
+        then return ary
+        else do let (wdbs, rem) = BS.splitAt 4 bs
+                    [b1, b2, b3, b4] = map b2w (BS.unpack wdbs)
+                    word = (b1 `shiftL` 24) .|. (b2 `shiftL` 16) .|. (b3 `shiftL` 8) .|. b4
+                liftIO $ writeArray ary i word
+                getWords rem ary (i+1)
+    b2w :: Word8 -> Word32
+    b2w = fromIntegral
+    
+runProgram :: (Program m) => m ()
+runProgram = undefined
 
 -- memArray :: (Program m) => Word32 -> m MemArray
 -- memArray i = do mem <- use mempool
