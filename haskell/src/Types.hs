@@ -3,6 +3,7 @@
 module Types where
 
 import           UM.Base
+import           Util
 
 import           Control.Lens.TH
 import           Control.Monad.Except
@@ -101,9 +102,9 @@ decodeSpecial word@(decodeOp -> op@LDIMM) = Just $ VMSpecial op regA immed
     immed = word .&. 0x1FFFFFF
 decodeSpecial _ = Nothing
 
-type MemArray = IOUArray Int Word32
+type MemArray = IOUArray Word32 Word32
 
-type MemPool = IOArray Int (Maybe MemArray)
+type MemPool = IOArray Word32 (Maybe MemArray)
 
 data VM = VM { vmR0 :: IORef Word32
              , vmR1 :: IORef Word32
@@ -114,8 +115,13 @@ data VM = VM { vmR0 :: IORef Word32
              , vmR6 :: IORef Word32
              , vmR7 :: IORef Word32
              , vmIP :: IORef Word32
-             , vmMempool :: IOArray Int (Maybe MemArray)
+             , vmMempool :: IORef MemPool
              }
+
+emptyVM :: (MonadIO io) => io VM
+emptyVM = do [r0, r1, r2, r3, r4, r5, r6, r7, ip] <- replicateM 9 (newIORef 0)
+             mempool <- newArray 16 Nothing >>= newIORef
+             return $ VM r0 r1 r2 r3 r4 r5 r6 r7 ip mempool
 
 type UMError = String
 type Program m = (MonadIO m, MonadError UMError m, MonadReader VM m)

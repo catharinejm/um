@@ -36,12 +36,15 @@ executables:
     source-dirs: app
     ghc-options:
       - -O
+      - -funbox-strict-fields
       - -threaded
       - -rtsopts
       - -with-rtsopts=-N1
     dependencies:
       - base
       - UM
+    default-extensions:
+      - NoImplicitPrelude
 
 tests:
   UM-test:
