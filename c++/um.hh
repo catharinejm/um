@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <string>
 #include <sstream>
+#include <queue>
 
 typedef uint32_t u32;
 typedef uint8_t byte;
@@ -60,6 +61,22 @@ struct Special {
     }
 };
 
+class LineBuf {
+    int m_cap;
+    int m_topIdx;
+    std::vector<std::string> m_buf;
+    LineBuf() = delete;
+public:
+    LineBuf(int cap)
+        : m_cap(cap), m_topIdx(0), m_buf() {}
+
+    int cap() const { return m_cap; }
+
+    void push(std::string &line);
+    void push(std::string &&line);
+    std::vector<std::string> lines() const;
+};
+
 class VM {
     u32 r0;
     u32 r1;
@@ -73,11 +90,11 @@ class VM {
     u32 ip;
 
     std::ostringstream currentLine;
-    std::string lastLine;
+    LineBuf m_lineBuf;
 
     std::vector<MemArray*> memPool;
 public:
-    VM() : r0(0), r1(0), r2(0), r3(0), r4(0), r5(0), r6(0), r7(0), ip(0), currentLine(), lastLine(), memPool() {} 
+    VM() : r0(0), r1(0), r2(0), r3(0), r4(0), r5(0), r6(0), r7(0), ip(0), currentLine(), m_lineBuf(50), memPool() {} 
 
     void loadProg(MemArray *prog) {
         if (memPool.empty())
@@ -204,7 +221,17 @@ public:
     void dumpState() const;
     static VM loadState(std::string const &filename);
 
-    std::string lineToPrint() const;
+    std::vector<std::string> lines() const {
+        return m_lineBuf.lines();
+    }
+
+    std::string curLine() const {
+        return currentLine.str();
+    }
+
+    int lineCap() const {
+        return m_lineBuf.cap();
+    }
 
 };
 

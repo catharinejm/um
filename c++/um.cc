@@ -4,6 +4,28 @@
 #include <string>
 #include <stdexcept>
 #include <stack>
+#include <utility>
+
+void LineBuf::push(std::string &&line) {
+    if (m_buf.size() == m_cap) {
+        m_buf[m_topIdx++] = line;
+        if (m_topIdx < m_cap) return;
+        m_topIdx = 0;
+    } else
+        m_buf.push_back(line);
+}
+void LineBuf::push(std::string &line) {
+    push(std::move(line));
+}
+
+std::vector<std::string> LineBuf::lines() const {
+    std::vector<std::string> inOrderVec;
+    for (int i = m_topIdx; i < m_buf.size(); i++)
+        inOrderVec.push_back(m_buf[i]);
+    for (int i = 0; i < m_topIdx; i++)
+        inOrderVec.push_back(m_buf[i]);
+    return inOrderVec;
+}
 
 MemArray *VM::getArray(u32 idx) const {
     if (idx >= memPool.size())
@@ -83,11 +105,11 @@ void VM::dumpState() const {
                 dumpWord(dumpFile, word);
         }
     }
-    string curLine = currentLine.str();
-    if (curLine.empty())
-        dumpFile << lastLine;
-    else
-        dumpFile << curLine;
+    auto ls = lines();
+    dumpWord(dumpFile, (u32)ls.size());
+    for (auto line : ls)
+        dumpFile << line << endl;
+    dumpFile << currentLine.str();
 }
 
 static inline u32 loadWord(std::ifstream &file) {
@@ -99,6 +121,16 @@ static inline u32 loadWord(std::ifstream &file) {
         word |= (((u32)b) & 0xFF) << (8 * i);
     }
     return word;
+}
+
+static inline std::string readString(std::ifstream &file) {
+    char line[512];
+    std::stringstream linebuf;
+    do {
+        file.getline(line, 512, '\n');
+        linebuf << line;
+    } while (file.fail());
+    return linebuf.str();
 }
 
 VM VM::loadState(std::string const &filename) {
@@ -138,22 +170,13 @@ VM VM::loadState(std::string const &filename) {
             vm.memPool.push_back(ary);
         }
     }
-    string line;
-    file >> line;
-    if (!line.empty())
-        if (line.back() == '\n')
-            vm.lastLine = line;
-        else
-            vm.currentLine.str(line);
+    const int numLines = (int)loadWord(file);
+    for (u32 i = 0; i < numLines; i++) {
+        vm.m_lineBuf.push(readString(file));
+    }
+    
+    vm.currentLine.str(readString(file));
     return vm;
-}
-
-std::string VM::lineToPrint() const {
-    std::string curLine = currentLine.str();
-    if (curLine.empty())
-        return lastLine;
-    else
-        return curLine;
 }
 
 void VM::MVCOND(Instruction insxn) {
@@ -204,13 +227,13 @@ void VM::OUTPUT(Instruction insxn) {
     if (c > 255)
         throw std::runtime_error("invalid character");
 
-    currentLine << (char)c;
-    std::cout << (char)c;
-
     if (c == '\n') {
-        lastLine = currentLine.str();
+        m_lineBuf.push(currentLine.str());
         currentLine.str("");
-    }
+    } else
+        currentLine << (char)c;
+
+    std::cout << (char)c;
 }
 
 void VM::INPUT(Instruction insxn) {
@@ -218,11 +241,14 @@ void VM::INPUT(Instruction insxn) {
     do {
         c = std::cin.get();
         if (c == 24) { // C-x
+            if (std::cin.get() == 'd') {
                 std::cout << "dumping" << std::endl;
                 dumpState();
+                if (std::cin.peek() == '\n')
+                    std::cin.get();
+
             }
-        if (std::cin.peek() == '\n')
-            std::cin.get();
+        }
     } while (c == 24);
 
     setReg(insxn.regC, (u32)c);
@@ -298,7 +324,9 @@ int main(int argc, char *argv[]) {
 
     if (loadDump) {
         VM vm = VM::loadState(args.top());
-        cout << vm.lineToPrint();
+        for (auto line : vm.lines())
+            cout << line << endl;
+        cout << vm.curLine();
         vm.run();
     } else {
         VM vm;
