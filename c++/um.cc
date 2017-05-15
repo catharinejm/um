@@ -3,6 +3,7 @@
 #include <fstream>
 #include <string>
 #include <stdexcept>
+#include <stack>
 
 MemArray *VM::getArray(u32 idx) const {
     if (idx >= memPool.size())
@@ -53,8 +54,106 @@ void VM::setWord(u32 idx, u32 offset, u32 val) {
     (*ary)[offset] = val;
 }
 
+static inline void dumpWord(std::ofstream &file, u32 word) {
+    file << (char)(word >> 24);
+    file << (char)(word >> 16 & 0xFF);
+    file << (char)(word >> 8 & 0xFF);
+    file << (char)(word & 0xFF);
+}
+
 void VM::dumpState() const {
-    // dump VM to file
+    using namespace std;
+    ofstream dumpFile("dump.bin", ios_base::binary | ios_base::out);
+    dumpWord(dumpFile, r0);
+    dumpWord(dumpFile, r1);
+    dumpWord(dumpFile, r2);
+    dumpWord(dumpFile, r3);
+    dumpWord(dumpFile, r4);
+    dumpWord(dumpFile, r5);
+    dumpWord(dumpFile, r6);
+    dumpWord(dumpFile, r7);
+    dumpWord(dumpFile, ip);
+    dumpWord(dumpFile, (u32)memPool.size());
+    for (auto aryP : memPool) {
+        if (!aryP) {
+            dumpFile << '\0' << '\0' << '\0' << '\0';
+        } else {
+            dumpWord(dumpFile, (u32)(aryP->size()));
+            for (auto word : *aryP)
+                dumpWord(dumpFile, word);
+        }
+    }
+    string curLine = currentLine.str();
+    if (curLine.empty())
+        dumpFile << lastLine;
+    else
+        dumpFile << curLine;
+}
+
+static inline u32 loadWord(std::ifstream &file) {
+    u32 word = 0;
+    for (int i = 3; i >= 0; i--) {
+        auto b = file.get();
+        if (b == -1)
+            throw std::runtime_error("premature EOF loading VM dump");
+        word |= (((u32)b) & 0xFF) << (8 * i);
+    }
+    return word;
+}
+
+VM VM::loadState(std::string const &filename) {
+    using namespace std;
+    cout << "Loading dump file " << filename << "..." << endl;
+    ifstream file(filename, ios_base::binary | ios_base::in);
+    VM vm;
+    vm.r0 = loadWord(file);
+    vm.r1 = loadWord(file);
+    vm.r2 = loadWord(file);
+    vm.r3 = loadWord(file);
+    vm.r4 = loadWord(file);
+    vm.r5 = loadWord(file);
+    vm.r6 = loadWord(file);
+    vm.r7 = loadWord(file);
+    vm.ip = loadWord(file);
+    // cout << "R0: " << vm.r0 << endl
+    //      << "R1: " << vm.r1 << endl
+    //      << "R2: " << vm.r2 << endl
+    //      << "R3: " << vm.r3 << endl
+    //      << "R4: " << vm.r4 << endl
+    //      << "R5: " << vm.r5 << endl
+    //      << "R6: " << vm.r6 << endl
+    //      << "R7: " << vm.r7 << endl
+    //      << "IP: " << vm.ip << endl;
+    u32 memPoolSize = loadWord(file);
+    for (u32 i = 0; i < memPoolSize; i++) {
+        u32 arySize = loadWord(file);
+        // cout << "Loading MemArray of size " << arySize << "..." << endl;
+        if (!arySize)
+            vm.memPool.push_back(nullptr);
+        else {
+            auto ary = new MemArray();
+            for (u32 i = 0; i < arySize; i++) {
+                ary->push_back(loadWord(file));
+            }
+            vm.memPool.push_back(ary);
+        }
+    }
+    string line;
+    file >> line;
+    if (!line.empty())
+        if (line.back() == '\n')
+            vm.lastLine = line;
+        else
+            vm.currentLine.str(line);
+    return vm;
+}
+
+std::string VM::lineToPrint() const {
+    std::string curLine = currentLine.str();
+    if (curLine.empty())
+        return lastLine;
+    else
+        return curLine;
 }
 
 void VM::MVCOND(Instruction insxn) {
@@ -104,18 +203,26 @@ void VM::OUTPUT(Instruction insxn) {
     u32 c = getReg(insxn.regC);
     if (c > 255)
         throw std::runtime_error("invalid character");
+
+    currentLine << (char)c;
     std::cout << (char)c;
+
+    if (c == '\n') {
+        lastLine = currentLine.str();
+        currentLine.str("");
+    }
 }
 
 void VM::INPUT(Instruction insxn) {
-    char c;
+    int c;
     do {
         c = std::cin.get();
-        
         if (c == 24) { // C-x
-            if (stc::cin.get() == 'd')
+                std::cout << "dumping" << std::endl;
                 dumpState();
-        }
+            }
+        if (std::cin.peek() == '\n')
+            std::cin.get();
     } while (c == 24);
 
     setReg(insxn.regC, (u32)c);
@@ -136,28 +243,18 @@ void VM::LDIMM(Special spcl) {
     setReg(spcl.reg, spcl.immed);
 }
 
-int main(int argc, char *argv[]) {
+void VM::loadProgramFile(std::string &filename) {
     using namespace std;
-
-    cout.setf(ios_base::unitbuf);
-
-    VM vm = VM();
-
-    if (argc != 2) {
-        cerr << "Usage: UM <file>" << endl;
-        return 1;
-    }
-
-    ifstream infile(argv[1], ios_base::binary | ios_base::in);
+    ifstream infile(filename, ios_base::binary | ios_base::in);
     auto *buffer = new vector<char>(std::istreambuf_iterator<char>(infile), std::istreambuf_iterator<char>());
     if (! buffer) {
         cerr << "Failed to allocate buffer" << endl;
-        return 1;
+        exit(1);
     }
         
     if (buffer->size() % 4 != 0) {
         cerr << "program is not word aligned" << endl;
-        return 1;
+        exit(1);
     }
 
     MemArray *prog = new MemArray();
@@ -172,8 +269,42 @@ int main(int argc, char *argv[]) {
 
     delete buffer;
 
-    vm.loadProg(prog);
-    vm.run();
+    loadProg(prog);
+}
+
+int main(int argc, char *argv[]) {
+    using namespace std;
+
+    cout.setf(ios_base::unitbuf);
+
+    if (argc < 2) {
+        cerr << "Usage: UM ( <um program> | --load <vmdump> )" << endl;
+        return 1;
+    }
+
+    stack<string> args;
+    for (int i = argc-1; i > 0; i--)
+        args.push(string(argv[i]));
+
+    bool loadDump = false;
+    if (args.top() == "--load") {
+        loadDump = true;
+        args.pop();
+        if (args.empty()) {
+            cerr << "'--load' requires an argument" << endl;
+            exit(1);
+        }
+    }
+
+    if (loadDump) {
+        VM vm = VM::loadState(args.top());
+        cout << vm.lineToPrint();
+        vm.run();
+    } else {
+        VM vm;
+        vm.loadProgramFile(args.top());
+        vm.run();
+    }
 
     return 0;
 }

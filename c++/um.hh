@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <iostream>
 #include <iomanip>
+#include <string>
+#include <sstream>
 
 typedef uint32_t u32;
 typedef uint8_t byte;
@@ -70,9 +72,12 @@ class VM {
 
     u32 ip;
 
+    std::ostringstream currentLine;
+    std::string lastLine;
+
     std::vector<MemArray*> memPool;
 public:
-    VM() : r0(0), r1(0), r2(0), r3(0), r4(0), r5(0), r6(0), r7(0), ip(0), memPool() {} 
+    VM() : r0(0), r1(0), r2(0), r3(0), r4(0), r5(0), r6(0), r7(0), ip(0), currentLine(), lastLine(), memPool() {} 
 
     void loadProg(MemArray *prog) {
         if (memPool.empty())
@@ -194,7 +199,12 @@ public:
         }
     }
 
+    void loadProgramFile(std::string &filename);
+
     void dumpState() const;
+    static VM loadState(std::string const &filename);
+
+    std::string lineToPrint() const;
 
 };
 
