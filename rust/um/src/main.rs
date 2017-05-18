@@ -53,6 +53,14 @@ fn main() {
             exit(1);
         }
     }
-    
-    println!("Umm...");
+
+    match vm.run() {
+        Err(UMError::Halt) => (),
+        Err(err) => {
+            println!("**** ERROR: {}", err);
+            exit(1)
+        },
+        Ok(_) => (),
+    }
+
 }
