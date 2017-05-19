@@ -15,7 +15,7 @@ pub enum Register {
     R7,
 }
 
-trait ToRegister : Copy {
+trait ToRegister: Copy {
     fn to_register(self) -> Result<Register>;
 }
 
@@ -46,13 +46,14 @@ impl Instruction {
     pub fn try_build(insxn: u32) -> Result<Option<Instruction>> {
         match (insxn >> 28).to_op()? {
             Op::LDIMM => Ok(None),
-            op => Ok(Some(
-                Instruction{
-                    op,
-                    reg_a: ((insxn >> 6) & 0x7).to_register()?,
-                    reg_b: ((insxn >> 3) & 0x7).to_register()?,
-                    reg_c: (insxn & 0x7).to_register()?,
-                })),
+            op => {
+                Ok(Some(Instruction {
+                            op,
+                            reg_a: ((insxn >> 6) & 0x7).to_register()?,
+                            reg_b: ((insxn >> 3) & 0x7).to_register()?,
+                            reg_c: (insxn & 0x7).to_register()?,
+                        }))
+            }
         }
     }
 }
@@ -66,19 +67,19 @@ pub struct Special {
 impl Special {
     pub fn try_build(insxn: u32) -> Result<Option<Special>> {
         match (insxn >> 28).to_op()? {
-            op @ Op::LDIMM => Ok(Some(
-                Special{
-                    op,
-                    reg: ((insxn >> 25) & 0x7).to_register()?,
-                    immed: insxn & 0x1FFFFFF,
-                })),
+            op @ Op::LDIMM => {
+                Ok(Some(Special {
+                            op,
+                            reg: ((insxn >> 25) & 0x7).to_register()?,
+                            immed: insxn & 0x1FFFFFF,
+                        }))
+            }
             _ => Ok(None),
         }
     }
 }
 
 impl VM {
-
     pub fn get_reg(&self, rnum: Register) -> u32 {
         match rnum {
             Register::R0 => self.r0,
@@ -124,20 +125,26 @@ impl VM {
     pub fn new_array(&mut self, size: u32) -> u32 {
         let new_ary = vec![0; size as usize];
         match self.mempool.iter().position(|a| a.is_none()) {
-            None => { self.mempool.push(Some(new_ary)); (self.mempool.len() as u32) - 1 },
-            Some(idx) => { self.mempool[idx] = Some(new_ary); idx as u32 },
+            None => {
+                self.mempool.push(Some(new_ary));
+                (self.mempool.len() as u32) - 1
+            }
+            Some(idx) => {
+                self.mempool[idx] = Some(new_ary);
+                idx as u32
+            }
         }
     }
 
     pub fn drop_array(&mut self, index: u32) -> Result<()> {
         if index == 0 {
-            return Err(UMError::DeallocZero)
+            return Err(UMError::DeallocZero);
         }
         self.get_array(index)?; // will error if not allocated
         self.mempool[index as usize] = None;
         Ok(())
     }
-    
+
     pub fn get_word(&self, index: u32, offset: u32) -> Result<u32> {
         match self.get_array(index)?.get(offset as usize) {
             None => Err(UMError::OffsetOutOfBounds(offset)),
@@ -224,7 +231,7 @@ impl VM {
     pub fn output(&mut self, insxn: Instruction) -> Result<()> {
         let wd = self.get_reg(insxn.reg_c);
         if wd > 255 {
-            return Err(UMError::InvalidChar(wd))
+            return Err(UMError::InvalidChar(wd));
         }
         let mut out = stdout();
         out.write_all(&[wd as u8])?;
@@ -240,7 +247,7 @@ impl VM {
                 if err.kind() == io::ErrorKind::UnexpectedEof {
                     self.set_reg(insxn.reg_c, !0);
                 } else {
-                    return Err(UMError::from(err))
+                    return Err(UMError::from(err));
                 }
             }
         }
@@ -268,5 +275,4 @@ impl VM {
         self.set_reg(spcl.reg, spcl.immed);
         Ok(())
     }
-
 }
