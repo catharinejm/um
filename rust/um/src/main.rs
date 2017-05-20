@@ -17,49 +17,26 @@ fn main() {
         exit(1);
     }
 
-    let load_dump = args[1] == "--load";
+    let mut vm = VM::new();
 
-    let filepath = if load_dump {
+    let result = if args[1] == "--load" {
         match args.get(2) {
             None => {
                 println!("option --load requires an argument");
                 exit(1);
             }
-            Some(f) => f
+            Some(f) => vm.load_dump(f).and_then(|_| vm.run()),
         }
     } else {
-        &args[1]
-    };
-    
-    let mut vm = VM {
-        r0: 0,
-        r1: 0,
-        r2: 0,
-        r3: 0,
-        r4: 0,
-        r5: 0,
-        r6: 0,
-        r7: 0,
-
-        ip: 0,
-        
-        mempool: vec![],
+        vm.load_program_file(&args[1]).and_then(|_| vm.run())
     };
 
-    match vm.load_program_file(filepath) {
-        Ok(_) => (),
-        Err(err) => {
-            println!("Error loading file: {}", err);
-            exit(1);
-        }
-    }
-
-    match vm.run() {
+    match result {
         Err(UMError::Halt) => (),
         Err(err) => {
             println!("**** ERROR: {}", err);
             exit(1)
-        },
+        }
         Ok(_) => (),
     }
 
