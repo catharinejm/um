@@ -24,6 +24,8 @@ impl LineBuf {
             if self.top_idx == self.cap {
                 self.top_idx = 0;
             }
+        } else {
+            self.buf.push(line);
         }
     }
 }
